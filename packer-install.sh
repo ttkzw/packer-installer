@@ -42,10 +42,11 @@ displayVer() {
 
 usage() {
   [[ "$1" ]] && echo -e "Download and Install Packer - Latest Version unless '-i' specified\n"
-  echo -e "usage: ${scriptname} [-i VERSION] [-a] [-c] [-h] [-v]"
+  echo -e "usage: ${scriptname} [-i VERSION] [-a] [-c] [-d DESTDIR] [-h] [-v]"
   echo -e "     -i VERSION\t: specify version to install in format '$LATEST' (OPTIONAL)"
   echo -e "     -a\t\t: automatically use sudo to install to /usr/local/bin"
   echo -e "     -c\t\t: leave binary in working directory (for CI/DevOps use)"
+  echo -e "     -d\t\t: destination directory to install (with version directory)"
   echo -e "     -h\t\t: help"
   echo -e "     -v\t\t: display ${scriptname} version"
 }
@@ -79,10 +80,11 @@ getLatest() {
   echo -n "$LATEST"
 }
 
-while getopts ":i:achv" arg; do
+while getopts ":i:d:achv" arg; do
   case "${arg}" in
     a)  sudoInstall=true;;
     c)  cwdInstall=true;;
+    d)  DESTDIR=${OPTARG};;
     i)  VERSION=${OPTARG};;
     h)  usage x; exit;;
     v)  displayVer; exit;;
@@ -95,6 +97,7 @@ shift $((OPTIND-1))
 # POPULATE VARIABLES NEEDED TO CREATE DOWNLOAD URL AND FILENAME
 if [[ -z "$VERSION" ]]; then
   VERSION=$(getLatest)
+  isLatest=true
 fi
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 if [[ "$OS" == "linux" ]]; then
@@ -145,6 +148,8 @@ fi
 # DETERMINE DESTINATION
 if [[ "$cwdInstall" ]]; then
   BINDIR=$(pwd)
+elif [[ "$DESTDIR" ]]; then
+  BINDIR="${DESTDIR}/${VERSION}"
 elif [[ -w "/usr/local/bin" ]]; then
   BINDIR="/usr/local/bin"
   CMDPREFIX=""
@@ -168,6 +173,12 @@ else
   else
     exit 0
   fi
+fi
+
+# CHECK VERSION
+if [[ -f "${BINDIR}/packer" && "${VERSION}" == "$(${BINDIR}/packer --version)" ]]; then
+  echo "There is already a Packer Version ${VERSION} installed in ${BINDIR}"
+  exit 0
 fi
 
 # CREATE TMPDIR FOR EXTRACTION
@@ -211,6 +222,13 @@ if [[ ! "$cwdInstall" ]]; then
   # COPY TO DESTINATION
   mkdir -p "${BINDIR}" || exit 1
   ${CMDPREFIX} mv packer "$BINDIR" || exit 1
+
+  # SYMLINK
+  if [[ "$DESTDIR" && "$isLatest" ]]; then
+    cd "${DESTDIR}" || exit 1
+    [[ -L "latest" ]] && rm latest
+    ln -s ${VERSION} latest
+  fi
 
   # CLEANUP AND EXIT
   cd "${TMPDIR}" || exit 1
